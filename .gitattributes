@@ -1,0 +1,30 @@
+# Line endings: LF in the repository and in the working tree, on every
+# platform — including Windows, which this project targets.
+#
+# Windows is the target at *runtime* (the fido provider calls webauthn.dll);
+# that says nothing about how the source is stored.  LF is the right choice
+# even here, for three reasons:
+#
+#   1. The Go toolchain is LF-native.  gofmt emits LF on every platform, so a
+#      CRLF working tree means every gofmt run rewrites the file and CI's
+#      formatting check disagrees with the checkout.
+#   2. The trust anchors in roots/ are compiled in with go:embed, so the bytes
+#      in the working tree are the bytes in the binary.  A CRLF checkout would
+#      embed different bytes than a Linux CI runner does, making the pool's
+#      contents platform-dependent.
+#   3. The core is meant to build and test on every platform, so an identical
+#      checkout everywhere keeps test fixtures byte-stable.
+#
+# This file is load-bearing: Git for Windows ships core.autocrlf=true in its
+# system gitconfig, so without these attributes a Windows clone gets CRLF
+# whatever the repo holds.  Attributes override autocrlf and travel with the
+# repo, so they apply to every clone and every CI runner.
+#
+# Git auto-detects binary content; add an explicit `binary` entry below if a
+# file is ever misdetected.
+* text=auto eol=lf
+
+# cmd.exe resolves goto/call labels unreliably in LF-only batch files.  Batch
+# scripts are the one deliberate CRLF exception.
+*.bat text eol=crlf
+*.cmd text eol=crlf
