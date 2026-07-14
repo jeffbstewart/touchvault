@@ -1,0 +1,39 @@
+touchvault
+Copyright 2026 Jeffrey B. Stewart
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+--------------------------------------------------------------------------
+
+Third-party software.
+
+The portable core of this module depends on the Go standard library alone.
+Key derivation uses crypto/hkdf, which entered the standard library in Go
+1.24; no third-party module is required to build, test, or embed the core.
+
+The fido provider, which reaches real hardware and builds only on Windows,
+depends on one module, obtained as a Go module and not redistributed as part
+of this source tree.  Its license governs its own code:
+
+  BSD 3-Clause License
+    golang.org/x/sys
+
+--------------------------------------------------------------------------
+
+Embedded data.
+
+The files under roots/ are attestation trust anchors published by Yubico.
+They are data, not code: certificates, distributed so this module can verify
+that an enrolling security key is genuine hardware.  Their provenance is
+recorded in the headers of the PEM files themselves.  They are not covered by
+this module's license and confer no endorsement by their issuer.
