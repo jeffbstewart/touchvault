@@ -194,8 +194,13 @@ type DeriveResult struct {
 	UserVerified bool
 }
 
-// validate is shared by every implementation so the checks cannot drift.
-func (r DeriveRequest) validate() error {
+// Validate checks a DeriveRequest.
+//
+// It is exported because it is part of the port's contract, not a private
+// convenience: every Authenticator implementation is expected to call it, so the
+// checks cannot drift between providers.  A provider lives in its own package —
+// an unexported helper could not be shared with one, which is the whole point.
+func (r DeriveRequest) Validate() error {
 	if len(r.CredentialIDs) == 0 {
 		return ErrNoCredentialID
 	}
@@ -210,8 +215,17 @@ func (r DeriveRequest) validate() error {
 	return nil
 }
 
-func (r DeriveRequest) timeout() time.Duration { return orDefault(r.Timeout) }
-func (r EnrollRequest) timeout() time.Duration { return orDefault(r.Timeout) }
+// TimeoutOrDefault returns Timeout, or [DefaultTimeout] when it is unset or
+// negative.
+//
+// Exported for the same reason as [DeriveRequest.Validate]: a provider must
+// resolve the timeout the same way every other provider does, and it cannot do
+// that with a helper it cannot see.
+func (r DeriveRequest) TimeoutOrDefault() time.Duration { return orDefault(r.Timeout) }
+
+// TimeoutOrDefault returns Timeout, or [DefaultTimeout] when it is unset or
+// negative.
+func (r EnrollRequest) TimeoutOrDefault() time.Duration { return orDefault(r.Timeout) }
 
 func orDefault(d time.Duration) time.Duration {
 	if d <= 0 {

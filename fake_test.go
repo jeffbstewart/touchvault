@@ -134,7 +134,7 @@ func (f *fakeAuthenticator) Derive(req DeriveRequest) (DeriveResult, error) {
 	// A real provider validates too; the fake must not be more permissive than
 	// the thing it stands in for, or tests would pass against inputs hardware
 	// would reject.
-	if err := req.validate(); err != nil {
+	if err := req.Validate(); err != nil {
 		return DeriveResult{}, err
 	}
 

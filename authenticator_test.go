@@ -66,7 +66,7 @@ func TestDeriveRequestValidate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.req.validate()
+			err := tt.req.Validate()
 			if !errors.Is(err, tt.want) {
 				t.Errorf("validate() = %v, want %v", err, tt.want)
 			}
@@ -80,7 +80,7 @@ func TestDeriveRequestValidate(t *testing.T) {
 // and reporting the first failure found keeps the message about their bug.
 func TestDeriveRequestValidateChecksCredentialBeforeSalt(t *testing.T) {
 	req := DeriveRequest{} // no credentials and no salt
-	if err := req.validate(); !errors.Is(err, ErrNoCredentialID) {
+	if err := req.Validate(); !errors.Is(err, ErrNoCredentialID) {
 		t.Errorf("validate() = %v, want %v", err, ErrNoCredentialID)
 	}
 }
@@ -98,11 +98,11 @@ func TestTimeoutDefaults(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := (DeriveRequest{Timeout: tt.set}).timeout(); got != tt.want {
-				t.Errorf("DeriveRequest.timeout() = %v, want %v", got, tt.want)
+			if got := (DeriveRequest{Timeout: tt.set}).TimeoutOrDefault(); got != tt.want {
+				t.Errorf("DeriveRequest.TimeoutOrDefault() = %v, want %v", got, tt.want)
 			}
-			if got := (EnrollRequest{Timeout: tt.set}).timeout(); got != tt.want {
-				t.Errorf("EnrollRequest.timeout() = %v, want %v", got, tt.want)
+			if got := (EnrollRequest{Timeout: tt.set}).TimeoutOrDefault(); got != tt.want {
+				t.Errorf("EnrollRequest.TimeoutOrDefault() = %v, want %v", got, tt.want)
 			}
 		})
 	}
