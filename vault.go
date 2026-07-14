@@ -103,7 +103,9 @@ type Vault interface {
 // Session is an unlocked vault.  It holds the data key in memory, so reads cost
 // no further touch.  Lock forgets that key.
 //
-// A Session is safe for concurrent use.
+// A Session is safe for concurrent use: reading a secret does not disturb the
+// vault, so any number of goroutines may read at once, and Lock may race with
+// them (a read that loses returns [ErrLocked], which is the honest answer).
 type Session interface {
 	Inspector
 
@@ -132,6 +134,25 @@ type Session interface {
 // Every mutation changes only in-memory state; call Sealed to serialize the new
 // vault to persist.  Obtaining an Admin already cost a touch: you must prove
 // presence to change what presence protects.
+//
+// # An Admin is NOT safe for concurrent use
+//
+// Unlike the read side, administration must be driven from one goroutine.  The
+// implementation does take a lock, so a concurrent call cannot corrupt memory —
+// but that guarantee is per-call, not transactional, and per-call atomicity is
+// not what an administrative sequence needs:
+//
+//	slot := touchvault.FreeSlot(admin.Slots())  // slot 1 is free
+//	admin.EnrollKey(auth, slot, "backup")       // ...but is it still?
+//
+// Every mutation here is really a read-modify-write spanning several calls, with
+// a gap in the middle that no per-method lock can close.  A mutex that made this
+// *look* safe would be worse than no claim at all, because it would invite
+// exactly the pattern it cannot protect.
+//
+// Administration is also a human-paced act — it blocks on someone physically
+// touching a key — so there is nothing to be gained by driving it from several
+// goroutines.  Serialize it in the caller.
 type Admin interface {
 	Session
 
@@ -354,6 +375,12 @@ func (v *vault) unlock(auth Authenticator) (*session, error) {
 // session is an unlocked vault.  It satisfies Session and Admin: the two differ
 // only in what the caller is handed, and a Session was already obtained by
 // proving presence.
+//
+// mu makes the read side genuinely concurrent-safe, and stops a concurrent
+// administrative call from corrupting memory.  It does NOT make [Admin] safe for
+// concurrent use, and must not be mistaken for doing so: an administrative
+// sequence spans several calls (see the Admin doc comment), and no per-method
+// lock closes the gap between them.
 type session struct {
 	mu      sync.Mutex
 	doc     *sealedVault
