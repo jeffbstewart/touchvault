@@ -164,6 +164,18 @@ API. Wrap with `%w`. Do not collapse two distinct failures into one sentinel, an
 return a bare `fmt.Errorf` where a sentinel exists — `ErrUserVerificationMismatch` in
 particular must never reach the caller as a decryption failure.
 
+### The read side is concurrent-safe; the admin side is not
+
+A `Session` may be read from any number of goroutines: reading a secret does not
+disturb the vault.
+
+An `Admin` may not. The implementation takes a lock, so a concurrent call cannot corrupt
+memory — but that guarantee is per-call, and an administrative sequence spans several
+calls (`FreeSlot(admin.Slots())` then `EnrollKey(slot, ...)` is a read-modify-write with a
+gap no per-method lock can close). Do not add a mutex, or a doc comment, that makes `Admin`
+*look* concurrency-safe: that would invite exactly the pattern it cannot protect. Admin
+work blocks on a human touching a key, so there is nothing to win by parallelizing it.
+
 ### Secrets in memory
 
 `Session.Lock` forgets the data key and any derived KEKs. It is **best-effort**: the Go

@@ -54,6 +54,31 @@ var (
 
 	// ErrWrongFormat means the sealed bytes are not a format this code knows.
 	ErrWrongFormat = errors.New("touchvault: sealed vault has an unrecognized format")
+
+	// ErrLocked means the session has been locked and no longer holds the data
+	// key, so it can no longer decrypt.  Unlock the vault again — which costs a
+	// touch, deliberately.
+	ErrLocked = errors.New("touchvault: the session is locked")
+
+	// ErrNoKeysEnrolled means the vault has no enrolled security key, so nothing
+	// can ever unlock it.  A vault created by this package always has at least
+	// one; a document with none was hand-made.
+	ErrNoKeysEnrolled = errors.New("touchvault: no security key is enrolled in this vault")
+
+	// ErrLastKey means RemoveKey was asked to remove the only enrolled key, which
+	// would make every secret in the vault permanently unreadable.
+	//
+	// RemoveKey refuses, because the usual reasons to remove a key — retiring one,
+	// rotating to a new one — never require emptying the vault: enroll the
+	// replacement first, then remove the old one.  A caller who genuinely means to
+	// strand the secrets calls Admin.ForceRemoveKey and says so.
+	ErrLastKey = errors.New("touchvault: refusing to remove the only enrolled key; enroll another first, or use ForceRemoveKey")
+
+	// ErrResidentKey means the authenticator stored the credential on the device,
+	// consuming one of its limited passkey slots.  touchvault creates
+	// non-discoverable credentials precisely so it consumes none, and refuses
+	// rather than quietly spend the operator's storage.
+	ErrResidentKey = errors.New("touchvault: the authenticator stored the credential, consuming a passkey slot; refusing")
 )
 
 // Attestation sentinels.  Enrollment requires attestation and there is no

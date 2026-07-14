@@ -24,6 +24,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"testing"
@@ -65,6 +66,15 @@ type fakeAuthenticator struct {
 	// noPRF models an authenticator that returns no hmac-secret output.
 	noPRF bool
 
+	// pki, when set, makes Enroll produce a genuine attestation signed by that
+	// synthetic vendor chain.  Nil means the authenticator attests to nothing --
+	// which is what a software authenticator does, and which enrollment refuses.
+	pki *testPKI
+
+	// attestationFormat overrides the format the fake claims.  Empty means
+	// "packed", the only one accepted.
+	attestationFormat string
+
 	enrollErr error
 	deriveErr error
 
@@ -77,6 +87,15 @@ func newFake(t *testing.T) *fakeAuthenticator {
 	return &fakeAuthenticator{t: t, seeds: make(map[string][]byte)}
 }
 
+// newFakeHardware returns a fake that attests as genuine hardware, and the trust
+// anchors that vouch for it.  This is the fixture for anything that enrolls.
+func newFakeHardware(t *testing.T) (*fakeAuthenticator, *x509.CertPool) {
+	t.Helper()
+	f := newFake(t)
+	f.pki = newTestPKI(t, testAAGUID())
+	return f, f.pki.roots
+}
+
 func (f *fakeAuthenticator) Enroll(req EnrollRequest) (EnrollResult, error) {
 	f.enrollCalls++
 	if f.enrollErr != nil {
@@ -87,11 +106,24 @@ func (f *fakeAuthenticator) Enroll(req EnrollRequest) (EnrollResult, error) {
 	seed := []byte(fmt.Sprintf("fake-seed-%d", f.enrollCalls))
 	f.seeds[string(credID)] = seed
 
-	return EnrollResult{
+	result := EnrollResult{
 		CredentialID: credID,
 		PRFEnabled:   true,
 		ResidentKey:  f.residentKey,
-	}, nil
+	}
+	if f.pki != nil {
+		signed := f.pki.attest(f.t, testAuthData(testAAGUID()), []byte("fake-client-data-hash"))
+		result.AttestationFormat = signed.AttestationFormat
+		result.AttestationAlg = signed.AttestationAlg
+		result.AttestationSignature = signed.AttestationSignature
+		result.AuthenticatorData = signed.AuthenticatorData
+		result.ClientDataHash = signed.ClientDataHash
+		result.AttestationCerts = signed.AttestationCerts
+	}
+	if f.attestationFormat != "" {
+		result.AttestationFormat = f.attestationFormat
+	}
+	return result, nil
 }
 
 func (f *fakeAuthenticator) Derive(req DeriveRequest) (DeriveResult, error) {
