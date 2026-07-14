@@ -78,35 +78,49 @@ jobs:
       # standard library vendors packages under paths like
       # vendor/golang.org/x/crypto/cryptobyte (crypto/x509 uses it), and those are
       # stdlib, not third-party.  go list already knows the difference.
+      #
+      # The check runs under every GOOS, because dependencies are build-constrained:
+      # a x/sys import added behind a //go:build windows tag would be invisible to
+      # a query run only on Linux.
       - name: the core has no third-party dependencies
         run: |
-          deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' \
-                   github.com/jeffbstewart/touchvault |
-                 grep -v '^github.com/jeffbstewart/touchvault' || true)
-          if [ -n "$deps" ]; then
-            echo "The touchvault core must depend on the standard library alone."
-            echo "It now also depends on:"
-            echo "$deps"
-            exit 1
-          fi
-          echo "core: standard library only"
+          for os in linux darwin windows; do
+            deps=$(GOOS=$os go list -deps \
+                     -f '{{if not .Standard}}{{.ImportPath}}{{end}}' \
+                     github.com/jeffbstewart/touchvault |
+                   grep -v '^github.com/jeffbstewart/touchvault' || true)
+            if [ -n "$deps" ]; then
+              echo "The touchvault core must depend on the standard library alone."
+              echo "Under GOOS=$os it also depends on:"
+              echo "$deps"
+              exit 1
+            fi
+            echo "  core on $os: standard library only"
+          done
 
       # And prove the check above can actually fail.  A guard that passes
-      # vacuously is worse than no guard: the same query run against fido MUST
-      # report golang.org/x/sys, or the core check is not testing anything.
+      # vacuously is worse than no guard.
+      #
+      # This must run under GOOS=windows specifically.  The provider's x/sys import
+      # lives in webauthn_windows.go, so on Linux the fido package genuinely has no
+      # third-party dependency -- which is correct, and which is exactly why an
+      # unpinned GOOS here would make this step assert nothing.  (It did: the first
+      # run of this workflow failed here, on a Linux runner, before the GOOS was
+      # pinned.)
       - name: the dependency check is not vacuous
         run: |
-          deps=$(go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' \
+          deps=$(GOOS=windows go list -deps \
+                   -f '{{if not .Standard}}{{.ImportPath}}{{end}}' \
                    github.com/jeffbstewart/touchvault/fido |
                  grep -v '^github.com/jeffbstewart/touchvault' || true)
           if ! echo "$deps" | grep -q 'golang.org/x/sys'; then
-            echo "The fido provider no longer reports x/sys as a dependency."
-            echo "Either the provider changed, or the query above has stopped"
-            echo "detecting third-party packages -- in which case the core check"
-            echo "is passing vacuously.  Investigate before trusting it."
+            echo "Under GOOS=windows the fido provider no longer reports x/sys."
+            echo "Either the provider changed, or the query has stopped detecting"
+            echo "third-party packages -- in which case the core check above is"
+            echo "passing vacuously.  Investigate before trusting it."
             exit 1
           fi
-          echo "check is live: it sees x/sys in fido"
+          echo "check is live: it sees x/sys in fido under GOOS=windows"
 
       # The core must not import the provider.  The dependency inverts at the
       # port: the core DEFINES Authenticator, and the provider depends on the core
@@ -114,14 +128,16 @@ jobs:
       # and make it unbuildable on platforms the provider does not support.
       - name: the core does not import the provider
         run: |
-          if go list -deps github.com/jeffbstewart/touchvault |
-             grep -q 'touchvault/fido'; then
-            echo "The core imports the fido provider.  The dependency must invert"
-            echo "at the port: the core defines Authenticator; the provider"
-            echo "implements it."
-            exit 1
-          fi
-          echo "core: does not import fido"
+          for os in linux darwin windows; do
+            if GOOS=$os go list -deps github.com/jeffbstewart/touchvault |
+               grep -q 'touchvault/fido'; then
+              echo "Under GOOS=$os the core imports the fido provider.  The"
+              echo "dependency must invert at the port: the core defines"
+              echo "Authenticator; the provider implements it."
+              exit 1
+            fi
+            echo "  core on $os: does not import fido"
+          done
 
   # The library must build for platforms it cannot reach a key on.  fido returns
   # ErrUnsupportedPlatform there; it must not fail to compile.
