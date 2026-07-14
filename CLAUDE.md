@@ -37,6 +37,7 @@ and a platform-specific FIDO2 transport.
 ```
 github.com/jeffbstewart/touchvault   (module root — portable, pure Go, stdlib only)
   vault.go            Create, Open, Vault, Session, Admin, Options, lifecycle
+  slots.go            SlotInfo, Inspector (Names/Slots), FreeSlot
   sealed.go           the on-disk format: marshal/unmarshal, AAD construction
   crypto.go           data-key + KEK wrapping; AES-256-GCM seal/open; HKDF
   entropy.go          the salt-dependence enrollment gate
