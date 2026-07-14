@@ -133,9 +133,10 @@ func testAAGUID() []byte {
 	return []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16}
 }
 
-// signedEnrollResult builds an EnrollResult whose attestation genuinely verifies
-// against pki.roots -- the honest-hardware case.
-func signedEnrollResult(t *testing.T, pki *testPKI, authData, clientDataHash []byte) EnrollResult {
+// attest builds the attestation material a genuine device would return: a packed
+// statement signed by the device's leaf key over authData || clientDataHash,
+// with the chain the key presents.
+func (pki *testPKI) attest(t *testing.T, authData, clientDataHash []byte) EnrollResult {
 	t.Helper()
 
 	signed := append(append([]byte{}, authData...), clientDataHash...)
@@ -146,7 +147,6 @@ func signedEnrollResult(t *testing.T, pki *testPKI, authData, clientDataHash []b
 	}
 
 	return EnrollResult{
-		CredentialID:         []byte("credential"),
 		AttestationFormat:    packedFormat,
 		AttestationAlg:       coseAlgES256,
 		AttestationSignature: sig,
@@ -155,6 +155,16 @@ func signedEnrollResult(t *testing.T, pki *testPKI, authData, clientDataHash []b
 		// Leaf first, then the intermediate the key presented.
 		AttestationCerts: [][]byte{pki.leafDER, pki.interDER},
 	}
+}
+
+// signedEnrollResult builds an EnrollResult whose attestation genuinely verifies
+// against pki.roots -- the honest-hardware case.
+func signedEnrollResult(t *testing.T, pki *testPKI, authData, clientDataHash []byte) EnrollResult {
+	t.Helper()
+
+	r := pki.attest(t, authData, clientDataHash)
+	r.CredentialID = []byte("credential")
+	return r
 }
 
 func TestAttestationAcceptsGenuineHardware(t *testing.T) {
