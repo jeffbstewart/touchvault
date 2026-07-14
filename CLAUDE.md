@@ -15,6 +15,23 @@ gofmt -l .          # Must print nothing
 The core builds and tests on **every** platform with **no hardware**. If a change to the
 core makes `go test ./...` require a security key, or fail on Linux, the change is wrong.
 
+### What CI enforces
+
+`.github/workflows/ci.yml` guards the structural invariants — the ones a well-meaning
+change could break with no test failing:
+
+- **gofmt, vet, and tests on Linux, macOS, and Windows.** The suite must pass with no key
+  present, on platforms that cannot even reach one.
+- **The race detector**, on Linux (it needs cgo). `Session` claims to be safe for
+  concurrent use; this is what checks the claim.
+- **The core has no third-party dependencies.** Enforced with
+  `go list -deps -f '{{if not .Standard}}...'` — *not* a grep for a domain name, because
+  the standard library vendors packages under `vendor/golang.org/x/...` and those are
+  stdlib. A companion step runs the same query against `fido` and requires it to *find*
+  `x/sys`, so the check cannot pass vacuously.
+- **The core does not import the provider.** The dependency inverts at the port.
+- **Cross-builds** for linux, darwin, and windows on amd64/arm64.
+
 ## Project Purpose
 
 `touchvault` stores a **set of secrets** so that reading any of them requires a physical
