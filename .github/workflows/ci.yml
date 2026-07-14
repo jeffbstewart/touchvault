@@ -1,0 +1,161 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # The core must build and test on every platform, with no security key present.
+  # That is not incidental: it is what makes the fake able to reach every function
+  # in the library, and what a contributor without a YubiKey relies on.  Running
+  # the suite on Linux and macOS is how we find out if it ever stops being true.
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      # The race detector needs cgo, which the Linux runner has and a Windows
+      # runner may not.  Session is documented as safe for concurrent use; this is
+      # what checks that claim rather than trusting the doc comment.
+      - name: go test -race
+        if: matrix.os == 'ubuntu-latest'
+        run: go test -race ./...
+
+  # Guard the two structural invariants that a well-meaning change could break
+  # without any test failing.
+  boundaries:
+    name: dependency boundaries
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      # The core depends on the standard library and nothing else.  Key derivation
+      # uses crypto/hkdf, which is in the standard library as of Go 1.24, so there
+      # is no golang.org/x/crypto and no third-party module of any kind.
+      #
+      # This is a property worth enforcing rather than hoping for: a library that
+      # holds secrets is one whose supply chain a caller has to audit, and "no
+      # third-party code in the core" is the strongest form of that promise.
+      #
+      # `not .Standard` is the right test, not a grep for a domain name.  The
+      # standard library vendors packages under paths like
+      # vendor/golang.org/x/crypto/cryptobyte (crypto/x509 uses it), and those are
+      # stdlib, not third-party.  go list already knows the difference.
+      #
+      # The check runs under every GOOS, because dependencies are build-constrained:
+      # a x/sys import added behind a //go:build windows tag would be invisible to
+      # a query run only on Linux.
+      - name: the core has no third-party dependencies
+        run: |
+          for os in linux darwin windows; do
+            deps=$(GOOS=$os go list -deps \
+                     -f '{{if not .Standard}}{{.ImportPath}}{{end}}' \
+                     github.com/jeffbstewart/touchvault |
+                   grep -v '^github.com/jeffbstewart/touchvault' || true)
+            if [ -n "$deps" ]; then
+              echo "The touchvault core must depend on the standard library alone."
+              echo "Under GOOS=$os it also depends on:"
+              echo "$deps"
+              exit 1
+            fi
+            echo "  core on $os: standard library only"
+          done
+
+      # And prove the check above can actually fail.  A guard that passes
+      # vacuously is worse than no guard.
+      #
+      # This must run under GOOS=windows specifically.  The provider's x/sys import
+      # lives in webauthn_windows.go, so on Linux the fido package genuinely has no
+      # third-party dependency -- which is correct, and which is exactly why an
+      # unpinned GOOS here would make this step assert nothing.  (It did: the first
+      # run of this workflow failed here, on a Linux runner, before the GOOS was
+      # pinned.)
+      - name: the dependency check is not vacuous
+        run: |
+          deps=$(GOOS=windows go list -deps \
+                   -f '{{if not .Standard}}{{.ImportPath}}{{end}}' \
+                   github.com/jeffbstewart/touchvault/fido |
+                 grep -v '^github.com/jeffbstewart/touchvault' || true)
+          if ! echo "$deps" | grep -q 'golang.org/x/sys'; then
+            echo "Under GOOS=windows the fido provider no longer reports x/sys."
+            echo "Either the provider changed, or the query has stopped detecting"
+            echo "third-party packages -- in which case the core check above is"
+            echo "passing vacuously.  Investigate before trusting it."
+            exit 1
+          fi
+          echo "check is live: it sees x/sys in fido under GOOS=windows"
+
+      # The core must not import the provider.  The dependency inverts at the
+      # port: the core DEFINES Authenticator, and the provider depends on the core
+      # to implement it.  An import the other way would drag x/sys into the core
+      # and make it unbuildable on platforms the provider does not support.
+      - name: the core does not import the provider
+        run: |
+          for os in linux darwin windows; do
+            if GOOS=$os go list -deps github.com/jeffbstewart/touchvault |
+               grep -q 'touchvault/fido'; then
+              echo "Under GOOS=$os the core imports the fido provider.  The"
+              echo "dependency must invert at the port: the core defines"
+              echo "Authenticator; the provider implements it."
+              exit 1
+            fi
+            echo "  core on $os: does not import fido"
+          done
+
+  # The library must build for platforms it cannot reach a key on.  fido returns
+  # ErrUnsupportedPlatform there; it must not fail to compile.
+  crossbuild:
+    name: cross-build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: build
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            GOOS=${target%/*} GOARCH=${target#*/} go build ./... || exit 1
+            echo "  $target: ok"
+          done
