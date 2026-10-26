@@ -32,15 +32,21 @@ jobs:
         with:
           go-version-file: go.mod
 
-      # GOOS=windows: on the ubuntu runner a plain ./... builds, but it
-      # excludes the windows-tagged provider, so x/sys never enters the
-      # analysis (the blindness 1b2866b fixed in the dependency checks).
-      # Windows is the superset build here; govulncheck honors GOOS.
+      # Two steps on purpose.  The analysis runs under GOOS=windows: on
+      # the ubuntu runner a plain ./... builds, but it excludes the
+      # windows-tagged provider, so x/sys never enters the analysis (the
+      # blindness 1b2866b fixed in the dependency checks); windows is the
+      # superset build here, and govulncheck honors GOOS.  But GOOS on
+      # "go run" cross-compiles govulncheck itself for windows, which the
+      # linux runner cannot exec, so the tool is installed for the host
+      # first (loudly: a failed install fails the step) and only the
+      # scan sees GOOS.
       - name: govulncheck
         id: scan
         run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
           set +e
-          GOOS=windows go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./... > vulns.txt 2>&1
+          GOOS=windows "$(go env GOPATH)/bin/govulncheck" ./... > vulns.txt 2>&1
           echo "status=$?" >> "$GITHUB_OUTPUT"
           cat vulns.txt
 
