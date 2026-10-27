@@ -24,6 +24,14 @@ jobs:
       - name: Test
         run: go test ./...
 
+      # Built for the runner, analyzed for windows (the superset build:
+      # core, fido, x/sys); GOOS on "go run" would cross-compile the
+      # tool itself.  See .github/workflows/vulns.yml.
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          GOOS=windows "$(go env GOPATH)/bin/govulncheck" ./...
+
       - name: Vet
         run: go vet ./...
 
